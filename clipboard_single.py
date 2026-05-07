@@ -162,7 +162,7 @@ def save_settings(s):
     d=os.path.dirname(_settings_path());os.makedirs(d,exist_ok=True);open(_settings_path(),"w").write(json.dumps(s,indent=2))
 def _get_data_dir():
     s=load_settings();cp=s.get("custom_path","")
-    return cp if cp and os.path.isdir(cp) else _get_base_dir()
+    return cp if cp and os.path.isdir(cp) else r"D:\Installation path\MengbaoClip"
 DATA_DIR=os.path.join(_get_data_dir(),"data");DATA_FILE=os.path.join(DATA_DIR,"clipboard.json");BACKUP_DIR=os.path.join(DATA_DIR,"backups");SETTINGS_FILE=os.path.join(DATA_DIR,"settings.json");IMG_DIR=os.path.join(DATA_DIR,"images")
 def _ensure_dirs():os.makedirs(DATA_DIR,exist_ok=True);os.makedirs(BACKUP_DIR,exist_ok=True);os.makedirs(IMG_DIR,exist_ok=True)
 def _load():
@@ -881,25 +881,22 @@ class MainWindow(QMainWindow):
         lo.addLayout(cp_layout)
         abtn=QPushButton("应用");lo.addWidget(abtn)
         # 关于信息
-        af=QFrame();af.setStyleSheet("QFrame{background:"+THEMES[self._theme]['glass']+";border:2px solid "+THEMES[self._theme]['border']+";border-radius:10px;padding:8px 0;}")
-        al=QHBoxLayout(af);al.setContentsMargins(12,4,12,4);al.setSpacing(6)
+        af=QFrame();af.setStyleSheet("QFrame{background:"+THEMES[self._theme]['glass']+";border:2px solid "+THEMES[self._theme]['border']+";border-radius:10px;padding:10px 14px;}")
+        al=QVBoxLayout(af);al.setContentsMargins(0,0,0,0);al.setSpacing(2)
         al.addWidget(QLabel("萌宝剪贴板 v3"))
-        al.addWidget(QLabel("|"))
-        al.addWidget(QLabel("Ruizz  Q 1367014277"))
+        al.addWidget(QLabel("Ruizz  |  Q 1367014277  |  2026.05.07"))
         lo.addWidget(af)
         # 使用说明（简洁版）
         lo.addWidget(QLabel("使用说明"))
         c=THEMES[self._theme]
-        hf=QFrame();hf.setStyleSheet("QFrame{background:"+c['glass']+";border:2px solid "+c['border']+";border-radius:10px;padding:10px 12px;}")
-        hl=QVBoxLayout(hf);hl.setSpacing(3)
+        hf=QFrame();hf.setStyleSheet("QFrame{background:"+c['glass']+";border:2px solid "+c['border']+";border-radius:10px;padding:8px 12px;}")
+        hl=QVBoxLayout(hf);hl.setSpacing(2)
         tips=[
-            "⌨️ 热键呼出 · 📋 双击复制 · ⭐ 右键星标",
-            "📝 右键加备注 · 📂 分类可拖拽排序",
-            "📷 图片缩略图显示 · 右键可识别文字",
-            "🔄 底部栏备份 · 🗑️ 删除进回收站可恢复",
+            "⌨️ 热键呼出  📋 双击复制  ⭐ 右键星标  📝 备注",
+            "📂 分类排序  📷 图片识别  🔄 备份  🗑️ 回收站",
         ]
         for t in tips:
-            lb=QLabel(t);lb.setStyleSheet("font-size:11px;color:"+c['text']+";padding:2px 0;")
+            lb=QLabel(t);lb.setStyleSheet("font-size:11px;color:"+c['text']+";padding:1px 0;")
             hl.addWidget(lb)
         lo.addWidget(hf,1)
         bb=QDialogButtonBox(QDialogButtonBox.StandardButton.Close);bb.rejected.connect(d.reject);lo.addWidget(bb)
