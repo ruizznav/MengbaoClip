@@ -1,0 +1,24 @@
+# Build outputs
+dist*/
+build/
+__pycache__/
+*.pyc
+*.spec
+*.log
+*.toc
+*.pyz
+*.pkg
+
+# User data (each user's own clipboard history)
+data/
+
+# Development files
+clipboard_single.backup.py
+make_*
+*.sed
+
+# Installer package
+安装包/
+
+# Workspace config
+.workbuddy/
