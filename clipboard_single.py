@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QTextEdit, QFrame, QSplitter,
     QInputDialog, QButtonGroup, QRadioButton, QAbstractItemView
 )
-from PyQt6.QtCore import Qt, QTimer, QMimeData, QSize
+from PyQt6.QtCore import Qt, QTimer, QMimeData, QSize, QEvent
 from PyQt6.QtGui import QFont, QIcon, QPixmap
 
 # 图标路径
@@ -323,16 +323,16 @@ class MainWindow(QMainWindow):
         self._setup_ui();self._reload_sidebar();self._load_items()
         self._clip.dataChanged.connect(self._on_copy)
         self._hk_pressed=False;self._hk_show=self._load_hotkey()
-        self._hk_timer=QTimer();self._hk_timer.timeout.connect(self._check_hotkey);self._hk_timer.start(200)
+        self._hk_timer=QTimer();self._hk_timer.timeout.connect(self._check_hotkey);self._hk_timer.start(100)
     def _setup_ui(self):
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint|Qt.WindowType.WindowMinimizeButtonHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground,False)
         self.setWindowTitle("萌宝剪贴板");self.setGeometry(100,100,760,560);self.setMinimumSize(560,400)
         if _APP_ICON:self.setWindowIcon(QIcon(_APP_ICON))
         self._apply_theme();self._center()
         c=QWidget();self.setCentralWidget(c);lo=QVBoxLayout(c);lo.setContentsMargins(0,0,0,0);lo.setSpacing(0)
         tb=QFrame();tb.setObjectName("titlebar");tlo=QHBoxLayout(tb);tlo.setContentsMargins(12,6,8,6)
-        self._drag_label=QLabel("萌宝剪贴板");self._drag_label.setStyleSheet("font-size:13px;font-weight:bold;color:"+THEMES[self._theme]['accent'])
+        self._drag_label=QLabel("萌宝剪贴板 v3");self._drag_label.setStyleSheet("font-size:13px;font-weight:bold;color:"+THEMES[self._theme]['accent'])
         tlo.addWidget(self._drag_label);tlo.addStretch()
         hb=QPushButton("-");hb.setFixedSize(32,24);hb.setStyleSheet("QPushButton{background:transparent;color:#888;border:none;border-radius:4px;font-size:14px;}QPushButton:hover{background:#f0d4dc;}")
         hb.clicked.connect(self.showMinimized);tlo.addWidget(hb)
@@ -381,6 +381,7 @@ class MainWindow(QMainWindow):
         tfl.addWidget(self._tf_all);tfl.addWidget(self._tf_text);tfl.addWidget(self._tf_img);tfl.addStretch()
         rl.addWidget(tf)
         self.l=QListWidget();self.l.setWordWrap(True);self.l.setSpacing(1)
+        self.l.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.l.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.l.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.l.setDropIndicatorShown(True)
@@ -401,9 +402,17 @@ class MainWindow(QMainWindow):
     def mousePressEvent(self,e):
         if e.button()==Qt.MouseButton.LeftButton and e.position().y()<36:self._drag_pos=e.globalPosition().toPoint()
         super().mousePressEvent(e)
+    def changeEvent(self,e):
+        if e.type()==QEvent.Type.WindowStateChange:
+            if self.windowState()&Qt.WindowState.WindowMinimized:
+                # 最小化到任务栏，不隐藏
+                self.showMinimized()
+            elif self.windowState()==Qt.WindowState.WindowNoState:
+                # 从任务栏恢复时正常显示
+                self.show();self.raise_();self.activateWindow()
+        super().changeEvent(e)
     def mouseMoveEvent(self,e):
         if self._drag_pos and e.buttons()==Qt.MouseButton.LeftButton:self.move(self.pos()+e.globalPosition().toPoint()-self._drag_pos);self._drag_pos=e.globalPosition().toPoint()
-        super().mouseMoveEvent(e)
     def mouseReleaseEvent(self,e):self._drag_pos=None;super().mouseReleaseEvent(e)
     def _apply_theme(self):self.setStyleSheet(make_style(self._theme))
     def _mkdlg(self,t,w=440,h=400):
@@ -509,13 +518,26 @@ class MainWindow(QMainWindow):
         self._tf_img.setStyleSheet(inactive)
     def _load_items(self):
         self.l.clear()
+        self.l.setIconSize(QSize(120,120))
         for it in get_items(cat=self._cur_cat,typ=self._type_filter,sort=self._sort_mode):self._add_row(it)
         if self.l.count():self._last=self.l.item(0).data(Qt.ItemDataRole.UserRole+4)or""
         self.st.setText(f"共{self.l.count()}条")
     def _add_row(self,it):
         c=it["content"];note=it.get("note","");img=it.get("img_path","");typ=it.get("type","text");html=it.get("html","")
+        # 格式化时间
+        ts=it.get("updated_at","") or it.get("created_at","")
+        t_str=""
+        if ts:
+            try:
+                dt=datetime.fromisoformat(ts)
+                t_str=dt.strftime("%m/%d %H:%M")
+            except:t_str=""
         p="⭐"if it["is_favorite"]else""
-        if typ=="image"and img:
+        # 有备注时显示 图标+备注，不显示原内容
+        if note:
+            icon="📷"if typ=="image"else"📄"
+            item=QListWidgetItem(f"{p}{icon}{note}  {t_str}")
+        elif typ=="image"and img:
             # 创建缩略图
             try:
                 from PyQt6.QtGui import QPixmap, QIcon, QColor, QPainter, QFont as QF
@@ -529,28 +551,52 @@ class MainWindow(QMainWindow):
                         painter.setFont(QF("Microsoft YaHei",16))
                         painter.drawText(thumb.rect(),Qt.AlignmentFlag.AlignTop|Qt.AlignmentFlag.AlignLeft,"⭐")
                         painter.end()
-                    item=QListWidgetItem(QIcon(thumb),"")
-                    self.l.setIconSize(thumb.size())
-                    item.setSizeHint(thumb.size()+QSize(20,20))
+                    item=QListWidgetItem(QIcon(thumb),t_str)
+                    item.setSizeHint(QSize(thumb.width()+10,thumb.height()+30))
                 else:
                     item=QListWidgetItem(f"{p}🖼️")
             except:
                 item=QListWidgetItem(f"{p}🖼️")
         elif note:
             d=f"📝{note}"
-            item=QListWidgetItem(f"{p}{d}")
+            item=QListWidgetItem(f"{p}{d}  {t_str}")
         else:
             prefix="📄"if html else""
-            d=prefix+(c[:118]if len(c)>120 else c).replace("\n"," ")
-            item=QListWidgetItem(f"{p}{d}")
+            d=prefix+(c[:100]if len(c)>120 else c).replace("\n"," ")
+            item=QListWidgetItem(f"{p}{d}  {t_str}")
         item.setData(Qt.ItemDataRole.UserRole,it["id"]);item.setData(Qt.ItemDataRole.UserRole+1,it.get("category",1))
         item.setData(Qt.ItemDataRole.UserRole+2,it["is_favorite"]);item.setData(Qt.ItemDataRole.UserRole+3,note);item.setData(Qt.ItemDataRole.UserRole+4,c);item.setData(Qt.ItemDataRole.UserRole+5,img);item.setData(Qt.ItemDataRole.UserRole+6,typ);item.setData(Qt.ItemDataRole.UserRole+7,html)
         self.l.addItem(item)
     def _on_copy(self):
         if self._copying:return
         try:
-            # 检查图片
             mime=self._clip.mimeData()
+            # 检测到复制文件/文件夹
+            if mime.hasUrls():
+                urls=mime.urls()
+                # 检查是否为图片文件
+                img_exts={".png",".jpg",".jpeg",".gif",".bmp",".webp",".ico",".tiff",".tif"}
+                is_all_files=all(os.path.isfile(u.toLocalFile()) for u in urls if u.toLocalFile())
+                if is_all_files:
+                    # 如果全是图片文件，转成图片处理
+                    local_files=[u.toLocalFile() for u in urls if u.toLocalFile()]
+                    img_files=[f for f in local_files if os.path.splitext(f)[1].lower() in img_exts]
+                    if img_files and len(img_files)==len(local_files):
+                        # 全是图片文件，用第一张
+                        fp=img_files[0]
+                        from PyQt6.QtGui import QPixmap
+                        px=QPixmap(fp)
+                        if px and not px.isNull():
+                            ts=datetime.now().strftime("%Y%m%d_%H%M%S")
+                            _ensure_dirs();img_fp=os.path.join(IMG_DIR,f"img_{ts}.png")
+                            px.save(img_fp,"PNG")
+                            d=_load();ai=d["items"];nid=max((x["id"]for x in ai),default=0)+1
+                            target_cat=self._cur_cat if self._cur_cat!=-1 else 1
+                            ai.insert(0,{"id":nid,"content":"[图片]","category":target_cat,"is_favorite":0,"note":"","type":"image","img_path":img_fp,"created_at":datetime.now().isoformat(),"updated_at":datetime.now().isoformat()})
+                            _save(d);self._load_items();self._set_status("已复制图片");self._last="__image__";return
+                    # 非图片文件，跳过不在剪贴板显示
+                    return
+            # 检查图片
             if mime.hasImage():
                 img=mime.imageData()
                 if img and not img.isNull():
@@ -561,8 +607,7 @@ class MainWindow(QMainWindow):
                     d=_load();ai=d["items"];nid=max((x["id"]for x in ai),default=0)+1
                     target_cat=self._cur_cat if self._cur_cat!=-1 else 1
                     ai.insert(0,{"id":nid,"content":"[图片]","category":target_cat,"is_favorite":0,"note":"","type":"image","img_path":fp,"created_at":datetime.now().isoformat(),"updated_at":datetime.now().isoformat()})
-                    _save(d);self._add_row({"id":nid,"content":"[图片]","category":target_cat,"is_favorite":0,"note":"","type":"image","img_path":fp})
-                    self._set_status("已复制图片");self._last="__image__";return
+                    _save(d);self._load_items();self._set_status("已复制图片");self._last="__image__";return
             t=self._clip.text()
             if t and t!=self._last:
                 target_cat=self._cur_cat if self._cur_cat!=-1 else 1
@@ -573,7 +618,11 @@ class MainWindow(QMainWindow):
                     if m.hasHtml():html=m.html()
                 except:pass
                 self._last=t;uid=add_item(t,cat=target_cat,html=html)
-                if uid:self._add_row({"id":uid,"content":t,"html":html,"category":target_cat,"is_favorite":0,"note":"","type":"text","img_path":""});self._set_status("已复制")
+                if uid:
+                    self._load_items()
+                    # 滚动到顶部，让新条目可见
+                    if self.l.count():self.l.scrollToTop()
+                    self._set_status("已复制")
         except:pass
     def _search(self,t):
         if not t.strip():self._load_items();return
@@ -583,26 +632,6 @@ class MainWindow(QMainWindow):
     def _toggle_sort(self):
         self._sort_mode="alpha"if self._sort_mode=="time"else"time"
         s="按字母"if self._sort_mode=="alpha"else"按时间";self._set_status(s);self._load_items()
-    def _copy_item(self,it):
-        self._copying=True
-        img=it.data(Qt.ItemDataRole.UserRole+5)or"";typ=it.data(Qt.ItemDataRole.UserRole+6)or"text"
-        html=it.data(Qt.ItemDataRole.UserRole+7)or""
-        if typ=="image"and img and os.path.exists(img):
-            from PyQt6.QtGui import QPixmap
-            self._clip.setPixmap(QPixmap(img));self._set_status("已复制图片")
-        else:
-            c=it.data(Qt.ItemDataRole.UserRole+4)or""
-            if c:
-                if html:
-                    # 如果有富文本，同时设置 HTML 和纯文本
-                    md=QMimeData()
-                    md.setText(c);md.setHtml(html)
-                    self._clip.setMimeData(md)
-                else:
-                    self._clip.setText(c)
-                self._set_status("已复制")
-        QTimer.singleShot(500,self._reset_copying)
-    def _reset_copying(self):self._copying=False
     def _fav(self):
         cur=self.l.currentItem()
         if not cur:return
@@ -615,6 +644,27 @@ class MainWindow(QMainWindow):
         if not cur:return
         if _confirm(self,"删除","确定删除这条记录？"):
             delete_item(cur.data(Qt.ItemDataRole.UserRole));self.l.takeItem(self.l.row(cur));self._set_status("已移到回收站")
+    def _copy_item(self,it=None):
+        if not it:it=self.l.currentItem()
+        if not it:return
+        self._copying=True
+        try:
+            uid=it.data(Qt.ItemDataRole.UserRole)
+            d=_load()
+            for x in d["items"]:
+                if x["id"]!=uid:continue
+                c=x.get("content","");html=x.get("html","");typ=x.get("type","text");img=x.get("img_path","")
+                if typ=="image"and img and os.path.exists(img):
+                    from PyQt6.QtGui import QPixmap
+                    QApplication.clipboard().setPixmap(QPixmap(img))
+                elif c:
+                    if html:
+                        md=QMimeData();md.setText(c);md.setHtml(html)
+                        QApplication.clipboard().setMimeData(md)
+                    else:QApplication.clipboard().setText(c)
+                self._set_status("已复制");break
+        except Exception as e:self._set_status(f"复制失败:{e}")
+        QTimer.singleShot(500,lambda:setattr(self,"_copying",False))
     def _show_trash(self):
         """切换到回收站视图"""
         self._cur_cat=-1;self._ct.setText("回收站");self.s.clear();self._reset_type_filter();self._load_items()
@@ -653,10 +703,8 @@ class MainWindow(QMainWindow):
             m.addSeparator()
             m.addAction("🗑️清空回收站",self._empty_trash)
             m.exec(self.l.mapToGlobal(pos));return
-        m.addAction("复制",lambda:(self._clip.setText(c),self._set_status("已复制")))
+        m.addAction("📋复制",lambda:self._copy_item(it))
         if typ=="image"and img:
-            m.addAction("查看图片",lambda:self._show_image(img))
-            m.addAction("复制图片",lambda:self._copy_item(it))
             try:
                 if _check_ocr():m.addAction("🔍 识别文字",lambda:self._ocr_image(img,None))
             except:pass
@@ -671,7 +719,10 @@ class MainWindow(QMainWindow):
         for cat in cats:
             if cat["id"] not in(1,-1):mm.addAction(cat['name'],lambda cid=cat["id"]:self._move_item(uid,cid))
         m.addSeparator();m.addAction("删除",self._del);m.addSeparator()
-        m.addAction("查看完整",lambda:self._show_full(c));m.exec(self.l.mapToGlobal(pos))
+        if typ=="image"and img:m.addAction("🖼️查看完整",lambda:self._show_image(img))
+        else:m.addAction("📄查看完整",lambda:self._show_full(c))
+        m.exec(self.l.mapToGlobal(pos))
+        return
     def _show_full(self,c):
         d,lo=self._mkdlg("完整内容",520,300)
         tx=QTextEdit();tx.setPlainText(c);tx.setReadOnly(True);lo.addWidget(tx,1)
@@ -732,14 +783,12 @@ class MainWindow(QMainWindow):
         n,ok=self._input_dlg("备注","输入备注名（替代原文显示）：")
         if ok:
             set_item_note(iid,n.strip())
-            for i in range(self.l.count()):
-                if self.l.item(i).data(Qt.ItemDataRole.UserRole)==iid:
-                    it=self.l.item(i);it.setData(Qt.ItemDataRole.UserRole+3,n.strip());c=it.data(Qt.ItemDataRole.UserRole+4)or""
-                    it.setText(f"📝{n.strip()}"if n.strip()else(c[:120]if len(c)>120 else c).replace("\n"," "));break
+            self._load_items()
             self._set_status("备注已保存"if n.strip()else"备注已清除")
     def _del_note(self,iid,w):
-        set_item_note(iid,"");w.setData(Qt.ItemDataRole.UserRole+3,"");c=w.data(Qt.ItemDataRole.UserRole+4)or""
-        w.setText((c[:120]if len(c)>120 else c).replace("\n"," "));self._set_status("备注已删")
+        set_item_note(iid,"")
+        self._load_items()
+        self._set_status("备注已删")
     def closeEvent(self,e):e.ignore();self.hide()
     def _toggle(self):
         if self.isVisible():self.hide()
@@ -775,14 +824,12 @@ class MainWindow(QMainWindow):
             s=(ctypes.windll.user32.GetAsyncKeyState(0x10)&0x8000)!=0
             w=(ctypes.windll.user32.GetAsyncKeyState(0x5b)&0x8000)!=0
             k=(ctypes.windll.user32.GetAsyncKeyState(hk["key"])&0x8000)!=0
-            # 检查修饰键：指定的必须按下，未指定的不能按下
+            # 检查修饰键：只要指定的键按下了就行（忽略其他按键）
             mod_ok=True
             if hk["ctrl"]:mod_ok=mod_ok and c
-            else:mod_ok=mod_ok and not c
             if hk["alt"]:mod_ok=mod_ok and a
-            else:mod_ok=mod_ok and not a
             if hk["shift"]:mod_ok=mod_ok and s
-            else:mod_ok=mod_ok and not s
+            if hk["win"]:mod_ok=mod_ok and w
             if hk["win"]:mod_ok=mod_ok and w
             else:mod_ok=mod_ok and not w
             if mod_ok and k:
