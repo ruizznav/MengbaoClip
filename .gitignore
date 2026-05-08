@@ -12,8 +12,9 @@ __pycache__/
 # User data (each user's own clipboard history)
 data/
 
-# Development files
-clipboard_single.backup.py
+# Development / backup files
+*.backup.py
+*.bak
 make_*
 *.sed
 
@@ -22,3 +23,11 @@ make_*
 
 # Workspace config
 .workbuddy/
+
+# GitHub upload temp
+GitHub上传/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

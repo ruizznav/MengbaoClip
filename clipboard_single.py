@@ -36,6 +36,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, QMimeData, QSize, QEvent
 from PyQt6.QtGui import QFont, QIcon, QPixmap
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
+
+# 单实例通信名称
+_SINGLE_INSTANCE_KEY="mengbao_clipboard_v3_single"
 
 # 图标路径
 _APP_ICON=os.path.join(os.path.dirname(os.path.abspath(__file__)),"icon_r.png")
@@ -985,9 +989,31 @@ class MainWindow(QMainWindow):
 if __name__=="__main__":
     try:
         app=QApplication(sys.argv);app.setApplicationName("萌宝剪贴板");app.setQuitOnLastWindowClosed(False)
+        # 单实例检测：尝试连接已有实例
+        _sock=QLocalSocket()
+        _sock.connectToServer(_SINGLE_INSTANCE_KEY)
+        if _sock.waitForConnected(500):
+            # 已有实例在运行，发送显示命令后退出
+            _sock.write(b"SHOW")
+            _sock.flush()
+            _sock.waitForBytesWritten(1000)
+            _sock.disconnectFromServer()
+            sys.exit(0)
+        # 没有已有实例，启动本地服务器
+        QLocalServer.removeServer(_SINGLE_INSTANCE_KEY)
+        _server=QLocalServer()
+        _server.listen(_SINGLE_INSTANCE_KEY)
         init_database();w=MainWindow();w.show()
+        def _on_new_conn():
+            conn=_server.nextPendingConnection()
+            conn.waitForReadyRead(1000)
+            conn.readAll();conn.deleteLater()
+            w.show();w.raise_();w.activateWindow();w._load_items()
+        _server.newConnection.connect(_on_new_conn)
         app.setStyleSheet(w.styleSheet())
         sys.exit(app.exec())
+    except SystemExit:
+        raise
     except BaseException as e:
         lp=os.path.join(_get_base_dir(),"crash.log")
         try:open(lp,"w",encoding="utf-8").write(f"CRASH:{type(e).__name__}:{e}\n");traceback.print_exc(file=open(lp,"a"))
